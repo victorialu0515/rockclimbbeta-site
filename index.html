@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RockClimbBeta — AI Climbing Coach</title>
+<meta name="description" content="A computer-vision pipeline that watches you boulder and suggests your next move — YOLOv8 hold detection, K-means route clustering, HRNet pose estimation, and a trained move-scoring model, running on AWS Lambda.">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <span class="logo">RockClimb<span class="accent">Beta</span></span>
+    <nav>
+      <a href="#demo">Demo</a>
+      <a href="#pipeline">Pipeline</a>
+      <a href="#stack">Stack</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <h1>AI beta for solo climbers</h1>
+    <p class="lede">Bouldering alone? RockClimbBeta watches your camera, finds the route, tracks your body, and suggests your next hold — the way a stronger climber would call beta from the ground.</p>
+    <a class="cta" href="#demo">Try the live demo &darr;</a>
+  </div>
+</section>
+
+<section id="demo" class="demo">
+  <div class="wrap">
+    <h2>Live demo</h2>
+    <p class="section-lede">Runs against the real detection, pose, and scoring models deployed on AWS Lambda — not a mock. First response after idle time may take 10&ndash;30s while the Lambda cold-starts.</p>
+
+    <div class="demo-panel">
+      <div class="stage">
+        <video id="video" autoplay playsinline muted></video>
+        <img id="uploadedPreview" alt="">
+        <canvas id="overlay"></canvas>
+        <div id="stageMessage" class="stage-message">Enable your camera, or upload photos below — no wall required</div>
+      </div>
+
+      <div class="controls">
+        <div class="step" id="step1">
+          <div class="step-head"><span class="step-num">1</span><span>Camera (optional)</span></div>
+          <p class="hint">Only needed for the live version. You can skip straight to uploading photos in steps 2 &amp; 3 instead.</p>
+          <button id="btnCamera">Enable camera</button>
+        </div>
+
+        <div class="step" id="step2">
+          <div class="step-head"><span class="step-num">2</span><span>Scan the wall</span></div>
+          <p class="hint">Point the camera at an empty section of wall, then scan — or upload a photo of one.</p>
+          <button id="btnScan" disabled>Scan wall</button>
+          <label class="upload-btn">Upload wall photo<input type="file" id="fileWall" accept="image/*" hidden></label>
+          <div id="trackPicker" class="track-picker" hidden></div>
+        </div>
+
+        <div class="step" id="step3">
+          <div class="step-head"><span class="step-num">3</span><span>Climb</span></div>
+          <p class="hint">Step into frame for a live suggestion every couple of seconds — or upload a photo of yourself on the wall.</p>
+          <button id="btnClimb" disabled>Start suggesting moves</button>
+          <button id="btnStop" disabled>Stop</button>
+          <label class="upload-btn disabled" id="labelClimbUpload">Upload climbing photo<input type="file" id="fileClimb" accept="image/*" hidden disabled></label>
+        </div>
+      </div>
+    </div>
+
+    <div id="suggestionBar" class="suggestion-bar" hidden>
+      <span class="suggestion-label">Suggested move:</span>
+      <span id="suggestionText">—</span>
+    </div>
+    <div id="statusLog" class="status-log"></div>
+  </div>
+</section>
+
+<section id="pipeline" class="pipeline">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <ol class="pipeline-steps">
+      <li>
+        <span class="pipeline-num">01</span>
+        <h3>Hold detection</h3>
+        <p>A YOLOv8 model, trained on ~300 hand-labeled photos of bolt-on holds, finds every hold on the wall from a single photo.</p>
+      </li>
+      <li>
+        <span class="pipeline-num">02</span>
+        <h3>Route clustering</h3>
+        <p>Two passes of K-means: one pulls each hold's dominant color from its cropped pixels, the second groups holds by color into color-coded routes.</p>
+      </li>
+      <li>
+        <span class="pipeline-num">03</span>
+        <h3>Pose estimation</h3>
+        <p>HRNet locates a 17-point COCO skeleton every frame, cropped to a YOLOv6-detected person first so joints stay sharp even on a full-frame shot.</p>
+      </li>
+      <li>
+        <span class="pipeline-num">04</span>
+        <h3>Move scoring</h3>
+        <p>Every reachable hold becomes a candidate move; a trained regression model ranks them by upward progress and comfortable reach, and the top one gets suggested.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="stack" class="stack">
+  <div class="wrap">
+    <h2>Built on</h2>
+    <div class="stack-grid">
+      <div class="stack-card"><h4>AWS Lambda</h4><p>Three container-image functions — detection, pose, scoring — each independently deployable.</p></div>
+      <div class="stack-card"><h4>Docker + ECR</h4><p>Each model ships as its own image, sized to fit compiled deps like torch and OpenCV that exceed Lambda's zip limits.</p></div>
+      <div class="stack-card"><h4>API Gateway</h4><p>HTTP APIs front each Lambda; this page calls them directly from the browser.</p></div>
+      <div class="stack-card"><h4>S3 + DynamoDB</h4><p>Model weights and run history — hold detections, poses, and scored moves per session.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>RockClimbBeta &mdash; a computer vision project by Victoria Lu.</span>
+  </div>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
