@@ -16,7 +16,7 @@ const video = document.getElementById("video");
 const uploadedPreview = document.getElementById("uploadedPreview");
 const canvas = document.getElementById("overlay");
 const ctx = canvas.getContext("2d");
-const stage = document.querySelector(".stage");
+const stage = document.getElementById("cameraStage");
 const stageMessage = document.getElementById("stageMessage");
 const btnCamera = document.getElementById("btnCamera");
 const btnScan = document.getElementById("btnScan");
@@ -317,4 +317,165 @@ fileClimb.addEventListener("change", async () => {
   suggestionBar.hidden = false;
   await analyzeFrame(b64);
   fileClimb.value = "";
+});
+
+/* ---- mode toggle ---- */
+
+const tabExample = document.getElementById("tabExample");
+const tabCamera = document.getElementById("tabCamera");
+const panelExample = document.getElementById("panelExample");
+const panelCamera = document.getElementById("panelCamera");
+
+tabExample.addEventListener("click", () => {
+  tabExample.classList.add("active");
+  tabCamera.classList.remove("active");
+  panelExample.classList.add("active");
+  panelCamera.classList.remove("active");
+});
+
+tabCamera.addEventListener("click", () => {
+  tabCamera.classList.add("active");
+  tabExample.classList.remove("active");
+  panelCamera.classList.add("active");
+  panelExample.classList.remove("active");
+});
+
+/* ---- example mode: preset wall + climber photos, one-click predict ---- */
+
+const exampleWallImg = document.getElementById("exampleWallImg");
+const exampleClimberImg = document.getElementById("exampleClimberImg");
+const fileExampleWall = document.getElementById("fileExampleWall");
+const fileExampleClimber = document.getElementById("fileExampleClimber");
+const btnPredict = document.getElementById("btnPredict");
+const exampleStatus = document.getElementById("exampleStatus");
+const exampleStage = document.getElementById("exampleStage");
+const exampleResultImg = document.getElementById("exampleResultImg");
+const exampleCanvas = document.getElementById("exampleCanvas");
+const exampleCtx = exampleCanvas.getContext("2d");
+const exampleSuggestionBar = document.getElementById("exampleSuggestionBar");
+const exampleSuggestionText = document.getElementById("exampleSuggestionText");
+const exampleLog = document.getElementById("exampleLog");
+
+let exampleWallB64 = null;   // null = use the bundled asset
+let exampleClimberB64 = null;
+
+function logExample(msg) {
+  const t = new Date().toLocaleTimeString();
+  exampleLog.textContent = `[${t}] ${msg}\n` + exampleLog.textContent;
+}
+
+async function urlToB64(url) {
+  const blob = await (await fetch(url)).blob();
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(",")[1]);
+    r.readAsDataURL(blob);
+  });
+}
+
+fileExampleWall.addEventListener("change", async () => {
+  const file = fileExampleWall.files[0];
+  if (!file) return;
+  exampleWallB64 = await readFileAsB64(file);
+  exampleWallImg.src = `data:${file.type};base64,${exampleWallB64}`;
+  fileExampleWall.value = "";
+});
+
+fileExampleClimber.addEventListener("change", async () => {
+  const file = fileExampleClimber.files[0];
+  if (!file) return;
+  exampleClimberB64 = await readFileAsB64(file);
+  exampleClimberImg.src = `data:${file.type};base64,${exampleClimberB64}`;
+  fileExampleClimber.value = "";
+});
+
+function pickBestTrack(rocks) {
+  const counts = {};
+  for (const r of rocks) counts[r.track] = (counts[r.track] || 0) + 1;
+  return Number(Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0]);
+}
+
+btnPredict.addEventListener("click", async () => {
+  btnPredict.disabled = true;
+  exampleStage.style.display = "none";
+  exampleSuggestionBar.hidden = true;
+  try {
+    exampleStatus.textContent = "Scanning wall…";
+    const wallB64 = exampleWallB64 || (await urlToB64(exampleWallImg.src));
+    const scanData = await callApi(API.rockDetection, { image: wallB64, model_path: "models/best.pt" });
+    const rocks = scanData.result_json.rocks;
+    const track = pickBestTrack(rocks);
+    logExample(`Scan complete: ${rocks.length} holds detected, using track ${track + 1} (most holds).`);
+
+    exampleStatus.textContent = "Analyzing climber…";
+    const climberSrc = exampleClimberImg.src;
+    const climberB64 = exampleClimberB64 || (await urlToB64(climberSrc));
+    const poseData = await callApi(API.hrnet, { image: climberB64 });
+
+    const img = new Image();
+    await new Promise((resolve) => { img.onload = resolve; img.src = climberSrc; });
+    exampleResultImg.src = climberSrc;
+    exampleCanvas.width = img.naturalWidth;
+    exampleCanvas.height = img.naturalHeight;
+    exampleStage.style.aspectRatio = `${img.naturalWidth} / ${img.naturalHeight}`;
+    exampleStage.style.display = "block";
+    exampleCtx.clearRect(0, 0, exampleCanvas.width, exampleCanvas.height);
+
+    if (!poseData.personDetected) {
+      exampleStatus.textContent = "";
+      logExample("No person detected in the climber photo.");
+      return;
+    }
+
+    exampleCtx.lineWidth = 4;
+    exampleCtx.strokeStyle = "#4dd9d0";
+    exampleCtx.fillStyle = "#4dd9d0";
+    for (const [a, b] of COCO_SKELETON) {
+      const pa = poseData.poses[a], pb = poseData.poses[b];
+      if (!validPoint(pa) || !validPoint(pb)) continue;
+      exampleCtx.beginPath();
+      exampleCtx.moveTo(pa[0], pa[1]);
+      exampleCtx.lineTo(pb[0], pb[1]);
+      exampleCtx.stroke();
+    }
+    for (const p of poseData.poses) {
+      if (!validPoint(p)) continue;
+      exampleCtx.beginPath();
+      exampleCtx.arc(p[0], p[1], 6, 0, 2 * Math.PI);
+      exampleCtx.fill();
+    }
+
+    exampleStatus.textContent = "Scoring candidate moves…";
+    const scoreData = await callApi(API.poseScore, {
+      poses: poseData.poses,
+      rock_json: { user_id: "demo", run_id: 0, track_chosen: track, rocks },
+      image_height: img.naturalHeight,
+      model_path: "linear_model.joblib",
+    });
+
+    const move = scoreData.nextMove;
+    const label = move ? describeMove(move) : "No reachable holds on this track";
+    exampleSuggestionBar.hidden = false;
+    exampleSuggestionText.textContent = label;
+    if (move) {
+      for (const [curKey, nextKey] of LIMBS) {
+        if (move[curKey] === move[nextKey]) continue;
+        const [x, y] = parsePoint(move[nextKey]);
+        for (const [radius, color, width] of [[27, "#ffffff", 5], [27, "#f2622e", 3]]) {
+          exampleCtx.beginPath();
+          exampleCtx.arc(x, y, radius, 0, 2 * Math.PI);
+          exampleCtx.strokeStyle = color;
+          exampleCtx.lineWidth = width;
+          exampleCtx.stroke();
+        }
+      }
+    }
+    exampleStatus.textContent = "";
+    logExample("Suggestion: " + label);
+  } catch (e) {
+    exampleStatus.textContent = "";
+    logExample("Failed: " + e.message);
+  } finally {
+    btnPredict.disabled = false;
+  }
 });

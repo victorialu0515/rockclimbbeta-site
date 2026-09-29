@@ -3,15 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RockClimbBeta — AI Climbing Coach</title>
-<meta name="description" content="A computer-vision pipeline that watches you boulder and suggests your next move — YOLOv8 hold detection, K-means route clustering, HRNet pose estimation, and a trained move-scoring model, running on AWS Lambda.">
+<title>RockClimbBeta — a computer vision pipeline for bouldering</title>
+<meta name="description" content="A computer-vision pipeline that watches you boulder and suggests your next move — YOLOv8 hold detection, K-means route clustering, HRNet pose estimation, and a trained move-scoring model, running live on AWS Lambda.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
 <header class="site-header">
-  <div class="wrap">
-    <span class="logo">RockClimb<span class="accent">Beta</span></span>
+  <div class="wrap-wide">
+    <span class="logo">RockClimbBeta</span>
     <nav>
       <a href="#demo">Demo</a>
       <a href="#pipeline">Pipeline</a>
@@ -22,87 +25,134 @@
 
 <section class="hero">
   <div class="wrap">
-    <h1>AI beta for solo climbers</h1>
-    <p class="lede">Bouldering alone? RockClimbBeta watches your camera, finds the route, tracks your body, and suggests your next hold — the way a stronger climber would call beta from the ground.</p>
-    <a class="cta" href="#demo">Try the live demo &darr;</a>
+    <div class="kicker">Computer vision project — live on AWS</div>
+    <h1>A camera watches a bouldering wall, finds the holds, tracks the climber, and suggests the next move.</h1>
+    <p class="lede">Three models trained from scratch — YOLOv8 hold detection, HRNet pose tracking, a linear-regression move scorer — running as real AWS Lambda functions below, not a mock.</p>
+    <p class="note"><b>Why upload photos instead of just a live feed?</b> Finding an actual bouldering wall to test in front of isn't practical for most visitors here (myself included, writing this at a desk). Try it with the bundled example below, upload your own climbing photos, or use your webcam if you do have a wall handy.</p>
+    <p class="note"><b>One honest gap:</b> the move-scoring model was still in early data collection when I paused this project — no hand-graded "good move" labels ever got collected, so it's trained on a heuristic stand-in (reward upward progress, prefer a comfortable reach) instead. Treat suggestions as directional, not gospel.</p>
+    <div class="repo-line">
+      Source —
+      <a href="https://github.com/victorialu0515/rockDetectionLambda" target="_blank">hold detection</a><span class="sep">·</span><a href="https://github.com/victorialu0515/HRNET" target="_blank">pose tracking</a><span class="sep">·</span><a href="https://github.com/victorialu0515/poseScore" target="_blank">move scoring</a><span class="sep">·</span><a href="https://github.com/victorialu0515/rockclimbbeta-site" target="_blank">this page</a>
+    </div>
   </div>
 </section>
 
-<section id="demo" class="demo">
-  <div class="wrap">
-    <h2>Live demo</h2>
-    <p class="section-lede">Runs against the real detection, pose, and scoring models deployed on AWS Lambda — not a mock. First response after idle time may take 10&ndash;30s while the Lambda cold-starts.</p>
+<section id="demo">
+  <div class="wrap-wide">
+    <h2>Try it</h2>
+    <p class="section-lede">Every result below comes from the real deployed Lambda functions. First call after idle time may take 10&ndash;30s while they cold-start — everything after that is a couple seconds.</p>
 
-    <div class="demo-panel">
-      <div class="stage">
-        <video id="video" autoplay playsinline muted></video>
-        <img id="uploadedPreview" alt="">
-        <canvas id="overlay"></canvas>
-        <div id="stageMessage" class="stage-message">Enable your camera, or upload photos below — no wall required</div>
-      </div>
-
-      <div class="controls">
-        <div class="step" id="step1">
-          <div class="step-head"><span class="step-num">1</span><span>Camera (optional)</span></div>
-          <p class="hint">Only needed for the live version. You can skip straight to uploading photos in steps 2 &amp; 3 instead.</p>
-          <button id="btnCamera">Enable camera</button>
-        </div>
-
-        <div class="step" id="step2">
-          <div class="step-head"><span class="step-num">2</span><span>Scan the wall</span></div>
-          <p class="hint">Point the camera at an empty section of wall, then scan — or upload a photo of one.</p>
-          <button id="btnScan" disabled>Scan wall</button>
-          <label class="upload-btn">Upload wall photo<input type="file" id="fileWall" accept="image/*" hidden></label>
-          <div id="trackPicker" class="track-picker" hidden></div>
-        </div>
-
-        <div class="step" id="step3">
-          <div class="step-head"><span class="step-num">3</span><span>Climb</span></div>
-          <p class="hint">Step into frame for a live suggestion every couple of seconds — or upload a photo of yourself on the wall.</p>
-          <button id="btnClimb" disabled>Start suggesting moves</button>
-          <button id="btnStop" disabled>Stop</button>
-          <label class="upload-btn disabled" id="labelClimbUpload">Upload climbing photo<input type="file" id="fileClimb" accept="image/*" hidden disabled></label>
-        </div>
-      </div>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="tabExample">Example photos</button>
+      <button class="mode-btn" id="tabCamera">Live camera</button>
     </div>
 
-    <div id="suggestionBar" class="suggestion-bar" hidden>
-      <span class="suggestion-label">Suggested move:</span>
-      <span id="suggestionText">—</span>
+    <!-- EXAMPLE MODE -->
+    <div class="mode-panel active" id="panelExample">
+      <div class="example-pairs">
+        <div class="example-card">
+          <img id="exampleWallImg" src="assets/example-wall.jpg" alt="Example bouldering wall">
+          <div class="card-label">
+            <span>1. The wall</span>
+            <label class="swap-btn" for="fileExampleWall">use your own photo</label>
+            <input type="file" id="fileExampleWall" accept="image/*" hidden>
+          </div>
+        </div>
+        <div class="example-card">
+          <img id="exampleClimberImg" src="assets/example-climber.jpg" alt="Example climber on the wall">
+          <div class="card-label">
+            <span>2. The climber</span>
+            <label class="swap-btn" for="fileExampleClimber">use your own photo</label>
+            <input type="file" id="fileExampleClimber" accept="image/*" hidden>
+          </div>
+        </div>
+      </div>
+
+      <div class="predict-row">
+        <button class="primary" id="btnPredict">Predict next move</button>
+        <span id="exampleStatus" class="hint" style="margin:0;"></span>
+      </div>
+
+      <div class="stage" id="exampleStage" style="display:none;">
+        <img id="exampleResultImg" alt="Result">
+        <canvas id="exampleCanvas"></canvas>
+      </div>
+
+      <div id="exampleSuggestionBar" class="suggestion-bar" hidden>
+        <span class="suggestion-label">Suggested move:</span>
+        <span id="exampleSuggestionText">—</span>
+      </div>
+      <div id="exampleLog" class="status-log"></div>
     </div>
-    <div id="statusLog" class="status-log"></div>
+
+    <!-- LIVE CAMERA MODE -->
+    <div class="mode-panel" id="panelCamera">
+      <div class="demo-panel" style="display:grid; grid-template-columns:1.4fr 1fr; gap:24px;">
+        <div class="stage" id="cameraStage">
+          <video id="video" autoplay playsinline muted></video>
+          <img id="uploadedPreview" alt="">
+          <canvas id="overlay"></canvas>
+          <div id="stageMessage" class="stage-message">Enable your camera to begin, or upload photos below</div>
+        </div>
+
+        <div class="controls">
+          <div class="step">
+            <div class="step-head"><span class="step-num">1</span><span>Camera</span></div>
+            <button id="btnCamera">Enable camera</button>
+          </div>
+
+          <div class="step">
+            <div class="step-head"><span class="step-num">2</span><span>Scan the wall</span></div>
+            <p class="hint">Point the camera at an empty section of wall, then scan.</p>
+            <button id="btnScan" disabled>Scan wall</button>
+            <label class="upload-btn">Upload wall photo<input type="file" id="fileWall" accept="image/*" hidden></label>
+            <div id="trackPicker" class="track-picker" hidden></div>
+          </div>
+
+          <div class="step">
+            <div class="step-head"><span class="step-num">3</span><span>Climb</span></div>
+            <p class="hint">Step into frame for a live suggestion every couple of seconds.</p>
+            <button id="btnClimb" disabled>Start suggesting moves</button>
+            <button id="btnStop" disabled>Stop</button>
+            <label class="upload-btn disabled" id="labelClimbUpload">Upload climbing photo<input type="file" id="fileClimb" accept="image/*" hidden disabled></label>
+          </div>
+        </div>
+      </div>
+
+      <div id="suggestionBar" class="suggestion-bar" hidden>
+        <span class="suggestion-label">Suggested move:</span>
+        <span id="suggestionText">—</span>
+      </div>
+      <div id="statusLog" class="status-log"></div>
+    </div>
   </div>
 </section>
 
-<section id="pipeline" class="pipeline">
+<section id="pipeline">
   <div class="wrap">
-    <h2>How it works</h2>
-    <ol class="pipeline-steps">
-      <li>
-        <span class="pipeline-num">01</span>
-        <h3>Hold detection</h3>
-        <p>A YOLOv8 model, trained on ~300 hand-labeled photos of bolt-on holds, finds every hold on the wall from a single photo.</p>
-      </li>
-      <li>
-        <span class="pipeline-num">02</span>
-        <h3>Route clustering</h3>
-        <p>Two passes of K-means: one pulls each hold's dominant color from its cropped pixels, the second groups holds by color into color-coded routes.</p>
-      </li>
-      <li>
-        <span class="pipeline-num">03</span>
-        <h3>Pose estimation</h3>
-        <p>HRNet locates a 17-point COCO skeleton every frame, cropped to a YOLOv6-detected person first so joints stay sharp even on a full-frame shot.</p>
-      </li>
-      <li>
-        <span class="pipeline-num">04</span>
-        <h3>Move scoring</h3>
-        <p>Every reachable hold becomes a candidate move; a trained regression model ranks them by upward progress and comfortable reach, and the top one gets suggested.</p>
-      </li>
-    </ol>
+    <h2>How the pipeline works</h2>
+    <div class="build-list">
+      <div class="build-item">
+        <div class="step-tag">01</div>
+        <div><h3>Hold detection</h3><p>A YOLOv8 model, trained on ~300 hand-labeled photos, finds every bolt-on hold (single class: <code>handle</code>). Each detected hold is cropped, K-means finds its dominant color, and a second K-means pass clusters holds into "tracks" — the color-coded routes climbers actually follow.</p></div>
+      </div>
+      <div class="build-item">
+        <div class="step-tag">02</div>
+        <div><h3>Pose tracking</h3><p>HRNet estimates a 17-point COCO skeleton for the climber, cropped to a YOLOv6-detected person first so joints stay sharp even on a full-frame photo. The camera stays fixed on a tripod in the intended flow, so the wall only needs scanning once.</p></div>
+      </div>
+      <div class="build-item">
+        <div class="step-tag">03</div>
+        <div><h3>Hold matching</h3><p>For each hand and foot, the nearest detected hold on the chosen track becomes that limb's current position. From there, every same-track hold within roughly one body-length becomes a candidate next move — hands search upward, feet search below the hips.</p></div>
+      </div>
+      <div class="build-item">
+        <div class="step-tag">04</div>
+        <div><h3>Move scoring</h3><p>A regularized linear regression scores every candidate move and the highest-scored one gets suggested. Trained on a heuristic target — net upward progress, comfortable reach — since real hand-graded labels were never collected before the project paused.</p></div>
+      </div>
+    </div>
   </div>
 </section>
 
-<section id="stack" class="stack">
+<section id="stack">
   <div class="wrap">
     <h2>Built on</h2>
     <div class="stack-grid">
@@ -115,8 +165,8 @@
 </section>
 
 <footer class="site-footer">
-  <div class="wrap">
-    <span>RockClimbBeta &mdash; a computer vision project by Victoria Lu.</span>
+  <div class="wrap-wide">
+    RockClimbBeta — built by <a href="https://github.com/victorialu0515" target="_blank">Victoria Lu</a>
   </div>
 </footer>
 
